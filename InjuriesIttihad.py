@@ -4,19 +4,10 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
 import os
-
-# Try to import plotly with error handling
-try:
-    import plotly.express as px
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
-    st.warning("⚠️ Plotly is not available. Charts will be disabled. Please install plotly: pip install plotly")
+import matplotlib.pyplot as plt
 
 # Page configuration
 st.set_page_config(
@@ -116,6 +107,10 @@ st.markdown("""
         font-size: 1rem;
         font-weight: 600;
     }
+    
+    .remove-button {
+        color: #dc3545;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -145,7 +140,7 @@ def save_data(data):
 if 'injuries' not in st.session_state:
     st.session_state.injuries = load_data()
 
-# Header with AL ITTIHAD SC LIBYA
+# Header
 st.markdown("""
 <div class="main-header">
     <div class="club-title">🦁 AL ITTIHAD SC LIBYA</div>
@@ -156,12 +151,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────
-# SIDEBAR - DATE NAVIGATION
+# SIDEBAR
 # ──────────────────────────────────────────────────────────────
 st.sidebar.markdown("### 📅 DATE NAVIGATION")
 st.sidebar.markdown("---")
 
-# Extract unique dates
 if st.session_state.injuries:
     dates_list = sorted(list(set([i.get('date', '') for i in st.session_state.injuries if i.get('date')])), reverse=True)
     
@@ -172,7 +166,6 @@ if st.session_state.injuries:
             format_func=lambda x: f"📅 {x}"
         )
         
-        # Filter data by selected date
         filtered_by_date = [i for i in st.session_state.injuries if i.get('date') == selected_date]
         
         st.sidebar.markdown("---")
@@ -183,20 +176,28 @@ if st.session_state.injuries:
         non_contact_count = sum(1 for i in filtered_by_date if i.get('injury_category') == 'Non-Contact')
         st.sidebar.markdown(f"**🤕 Contact:** {contact_count}")
         st.sidebar.markdown(f"**🏃 Non-Contact:** {non_contact_count}")
-        
-        severity_counts = {}
-        for i in filtered_by_date:
-            sev = i.get('severity', 'Unknown')
-            severity_counts[sev] = severity_counts.get(sev, 0) + 1
-        st.sidebar.markdown("**⚠️ Severity:**")
-        for sev, count in severity_counts.items():
-            st.sidebar.markdown(f"- {sev}: {count}")
     else:
         selected_date = None
         filtered_by_date = []
 else:
     selected_date = None
     filtered_by_date = []
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🗑️ REMOVE PLAYER")
+st.sidebar.markdown("Select a player to remove all their records")
+
+if st.session_state.injuries:
+    all_players_for_remove = sorted(list(set([i.get('name', '') for i in st.session_state.injuries if i.get('name')])))
+    if all_players_for_remove:
+        player_to_remove = st.sidebar.selectbox("Select Player to Remove", all_players_for_remove, key="remove_player")
+        
+        if st.sidebar.button("🗑️ REMOVE PLAYER", type="secondary"):
+            # Remove all injuries for this player
+            st.session_state.injuries = [i for i in st.session_state.injuries if i.get('name') != player_to_remove]
+            save_data(st.session_state.injuries)
+            st.sidebar.success(f"✅ {player_to_remove} removed successfully!")
+            st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### ℹ️ Clinical Protocols")
@@ -208,14 +209,18 @@ st.sidebar.markdown("""
 """)
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🏥 AL ITTIHAD SC LIBYA")
-st.sidebar.markdown("*Medical Staff Only*")
+st.sidebar.markdown("### 📊 Risk Score Scale (0-10)")
+st.sidebar.markdown("""
+- **0-2**: Low Risk
+- **3-5**: Medium Risk  
+- **6-8**: High Risk
+- **9-10**: Very High Risk
+""")
 
 # ──────────────────────────────────────────────────────────────
-# MAIN CONTENT - ADD NEW INJURY
+# ADD NEW INJURY
 # ──────────────────────────────────────────────────────────────
 st.header("➕ ADD NEW INJURY RECORD")
-st.markdown("*Manual entry by medical staff*")
 
 with st.container():
     col1, col2, col3 = st.columns(3)
@@ -227,30 +232,29 @@ with st.container():
         injury_date = st.date_input("📅 Injury Date", datetime.today())
     
     with col3:
-        # Custom injury type - the doctor writes their own!
         custom_injury = st.text_input("🩺 Injury Diagnosis", placeholder="e.g., Hamstring Strain, ACL, Ankle Sprain...")
     
     col4, col5, col6 = st.columns(3)
     
     with col4:
-        injury_category = st.selectbox(
-            "🏥 Injury Category",
-            ["Contact", "Non-Contact"]
-        )
+        injury_category = st.selectbox("🏥 Injury Category", ["Contact", "Non-Contact"])
     
     with col5:
-        severity = st.select_slider(
-            "⚠️ Severity Level",
-            options=["Mild", "Moderate", "Severe", "Critical"],
-            value="Moderate"
-        )
+        severity = st.select_slider("⚠️ Severity Level", options=["Mild", "Moderate", "Severe", "Critical"], value="Moderate")
     
     with col6:
-        risk_level = st.select_slider(
-            "📊 Risk Level",
-            options=["Low", "Medium", "High", "Very High"],
-            value="Medium"
-        )
+        # Risk score on scale 0-10 instead of 4 levels
+        risk_score = st.slider("📊 Risk Score (0-10)", min_value=0, max_value=10, value=5, step=1)
+        # Convert score to risk label for display
+        if risk_score <= 2:
+            risk_label = "Low"
+        elif risk_score <= 5:
+            risk_label = "Medium"
+        elif risk_score <= 8:
+            risk_label = "High"
+        else:
+            risk_label = "Very High"
+        st.caption(f"Risk Level: **{risk_label}**")
     
     col7, col8 = st.columns(2)
     
@@ -260,10 +264,8 @@ with st.container():
     with col8:
         rice = st.selectbox("🧊 RICE Protocol", ["Yes", "No", "Partial", "Not Applicable"])
     
-    # Additional clinical notes
-    clinical_notes = st.text_area("📝 Clinical Notes", placeholder="Additional observations, treatment plan, return to play estimate...", height=80)
+    clinical_notes = st.text_area("📝 Clinical Notes", placeholder="Additional observations, treatment plan...", height=80)
     
-    # Submit button
     if st.button("💾 SAVE INJURY RECORD", type="primary", use_container_width=True):
         if player_name and custom_injury:
             new_injury = {
@@ -275,14 +277,14 @@ with st.container():
                 "severity": severity,
                 "meat": meat,
                 "rice": rice,
-                "risk": risk_level,
+                "risk_score": risk_score,
+                "risk_label": risk_label,
                 "clinical_notes": clinical_notes,
                 "timestamp": datetime.now().isoformat()
             }
-            
             st.session_state.injuries.append(new_injury)
             save_data(st.session_state.injuries)
-            st.success(f"✅ Injury record for {player_name} saved successfully!")
+            st.success(f"✅ Injury record for {player_name} saved! Risk Score: {risk_score}/10")
             st.rerun()
         elif not player_name:
             st.error("❌ Please enter player name!")
@@ -292,74 +294,84 @@ with st.container():
 st.markdown("---")
 
 # ──────────────────────────────────────────────────────────────
-# MAIN TABLE - INJURIES DATABASE
+# MAIN TABLE
 # ──────────────────────────────────────────────────────────────
 st.header("📋 INJURIES DATABASE")
 
 if filtered_by_date and selected_date:
     df_display = pd.DataFrame(filtered_by_date)
-    
-    # Select and rename columns for display
-    display_cols = ['name', 'date', 'injury_type', 'injury_category', 'severity', 'meat', 'rice', 'risk']
-    display_names = ['Player Name', 'Date', 'Injury Diagnosis', 'Category', 'Severity', 'MEAT', 'RICE', 'Risk']
-    
+    display_cols = ['name', 'date', 'injury_type', 'injury_category', 'severity', 'meat', 'rice', 'risk_score', 'risk_label']
     available_cols = [col for col in display_cols if col in df_display.columns]
     if available_cols:
-        df_table = df_display[available_cols].copy()
-        df_table.columns = display_names[:len(available_cols)]
+        # Rename columns for display
+        rename_map = {
+            'name': 'Player Name',
+            'date': 'Date', 
+            'injury_type': 'Injury Diagnosis',
+            'injury_category': 'Category',
+            'severity': 'Severity',
+            'meat': 'MEAT',
+            'rice': 'RICE',
+            'risk_score': 'Risk Score (0-10)',
+            'risk_label': 'Risk Level'
+        }
+        df_display = df_display[available_cols].rename(columns=rename_map)
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
         
-        st.dataframe(
-            df_table,
-            use_container_width=True,
-            hide_index=True
-        )
+        # Add individual injury removal option
+        st.markdown("#### 🗑️ Remove Specific Injury")
+        injury_options = [f"{row['name']} - {row['injury_type']} - {row['date']}" for idx, row in df_display.iterrows()]
+        injury_to_remove = st.selectbox("Select injury to remove", injury_options, key="remove_injury_sidebar")
         
-        # Show clinical notes for selected injury
-        if len(df_display) > 0:
-            st.markdown("#### 📝 Clinical Notes Details")
-            for idx, injury in df_display.iterrows():
-                if injury.get('clinical_notes'):
-                    with st.expander(f"👤 {injury['name']} - {injury['injury_type']} - {injury['date']}"):
-                        st.write(injury['clinical_notes'])
+        if st.button("🗑️ REMOVE THIS INJURY", type="secondary"):
+            # Find and remove the selected injury
+            for idx, row in df_display.iterrows():
+                injury_text = f"{row['name']} - {row['injury_type']} - {row['date']}"
+                if injury_text == injury_to_remove:
+                    st.session_state.injuries = [i for i in st.session_state.injuries if not (
+                        i.get('name') == row['name'] and 
+                        i.get('injury_type') == row['injury_type'] and 
+                        i.get('date') == row['date']
+                    )]
+                    save_data(st.session_state.injuries)
+                    st.success("✅ Injury removed successfully!")
+                    st.rerun()
 else:
-    st.info("👈 Select a date from the sidebar to view injury records or add new injuries above")
+    st.info("👈 Select a date from the sidebar to view injury records")
 
 st.markdown("---")
 
 # ──────────────────────────────────────────────────────────────
-# CLINICAL DASHBOARD TABS
+# DASHBOARD TABS
 # ──────────────────────────────────────────────────────────────
 
-if st.session_state.injuries and PLOTLY_AVAILABLE:
+if st.session_state.injuries:
     tab1, tab2, tab3, tab4 = st.tabs([
         "📊 Clinical Dashboard",
-        "📈 Load Monitoring",
+        "📈 Load Monitoring", 
         "🎯 Risk Profile",
         "📋 Injured Players Analysis"
     ])
     
-    # ─── TAB 1: Clinical Dashboard ───
+    # TAB 1: Clinical Dashboard
     with tab1:
-        st.header("Clinical Dashboard - AL ITTIHAD SC LIBYA")
+        st.header("Clinical Dashboard")
         
-        # Overall statistics
         col1, col2, col3, col4 = st.columns(4)
-        
-        total_injuries = len(st.session_state.injuries)
-        unique_players = len(set(i.get('name', '') for i in st.session_state.injuries))
-        critical_count = sum(1 for i in st.session_state.injuries if i.get('severity') == 'Critical')
-        high_risk_count = sum(1 for i in st.session_state.injuries if i.get('risk') in ['High', 'Very High'])
-        
         with col1:
-            st.metric("📊 Total Injuries", total_injuries)
+            st.metric("📊 Total Injuries", len(st.session_state.injuries))
         with col2:
+            unique_players = len(set(i.get('name', '') for i in st.session_state.injuries))
             st.metric("👥 Players Affected", unique_players)
         with col3:
+            critical_count = sum(1 for i in st.session_state.injuries if i.get('severity') == 'Critical')
             st.metric("🚨 Critical Cases", critical_count)
         with col4:
-            st.metric("⚠️ High Risk", high_risk_count)
+            # High risk: score 6-10
+            high_risk_count = sum(1 for i in st.session_state.injuries if i.get('risk_score', 0) >= 6)
+            st.metric("⚠️ High Risk (6-10)", high_risk_count)
         
-        # Charts row 1
+        # Charts using matplotlib
         col1, col2 = st.columns(2)
         
         with col1:
@@ -370,15 +382,12 @@ if st.session_state.injuries and PLOTLY_AVAILABLE:
                 category_counts[cat] = category_counts.get(cat, 0) + 1
             
             if category_counts:
-                fig_pie = px.pie(
-                    values=list(category_counts.values()),
-                    names=list(category_counts.keys()),
-                    title="Contact vs Non-Contact Injuries",
-                    color_discrete_sequence=['#dc3545', '#28a745'],
-                    hole=0.3
-                )
-                fig_pie.update_layout(height=400)
-                st.plotly_chart(fig_pie, use_container_width=True)
+                fig, ax = plt.subplots(figsize=(6, 4))
+                colors_cat = ['#dc3545' if c == 'Contact' else '#28a745' for c in category_counts.keys()]
+                ax.pie(category_counts.values(), labels=category_counts.keys(), autopct='%1.1f%%', colors=colors_cat, startangle=90)
+                ax.set_title('Contact vs Non-Contact Injuries')
+                st.pyplot(fig)
+                plt.close()
         
         with col2:
             st.subheader("Injuries by Severity")
@@ -388,72 +397,55 @@ if st.session_state.injuries and PLOTLY_AVAILABLE:
                 severity_counts[sev] = severity_counts.get(sev, 0) + 1
             
             if severity_counts:
+                fig, ax = plt.subplots(figsize=(6, 4))
                 colors_sev = {'Mild': '#28a745', 'Moderate': '#ffc107', 'Severe': '#fd7e14', 'Critical': '#dc3545'}
-                fig_bar = px.bar(
-                    x=list(severity_counts.keys()),
-                    y=list(severity_counts.values()),
-                    title="Severity Distribution",
-                    color=list(severity_counts.keys()),
-                    color_discrete_map=colors_sev,
-                    labels={'x': 'Severity', 'y': 'Count'}
-                )
-                fig_bar.update_layout(height=400, showlegend=False)
-                st.plotly_chart(fig_bar, use_container_width=True)
+                bar_colors = [colors_sev.get(s, '#6c757d') for s in severity_counts.keys()]
+                ax.bar(severity_counts.keys(), severity_counts.values(), color=bar_colors)
+                ax.set_xlabel('Severity')
+                ax.set_ylabel('Count')
+                ax.set_title('Severity Distribution')
+                st.pyplot(fig)
+                plt.close()
         
-        # Charts row 2
         col1, col2 = st.columns(2)
         
         with col1:
             st.subheader("Top Injury Diagnoses")
-            injury_type_counts = {}
+            injury_counts = {}
             for i in st.session_state.injuries:
-                inj_type = i.get('injury_type', 'Unknown')
-                injury_type_counts[inj_type] = injury_type_counts.get(inj_type, 0) + 1
+                inj = i.get('injury_type', 'Unknown')
+                injury_counts[inj] = injury_counts.get(inj, 0) + 1
             
-            if injury_type_counts:
-                top_injuries = dict(sorted(injury_type_counts.items(), key=lambda x: x[1], reverse=True)[:5])
-                fig_horiz = px.bar(
-                    x=list(top_injuries.values()),
-                    y=list(top_injuries.keys()),
-                    orientation='h',
-                    title="Most Common Injuries",
-                    color=list(top_injuries.values()),
-                    color_continuous_scale='Reds',
-                    labels={'x': 'Number of Cases', 'y': 'Injury Type'}
-                )
-                fig_horiz.update_layout(height=400)
-                st.plotly_chart(fig_horiz, use_container_width=True)
+            if injury_counts:
+                top5 = dict(sorted(injury_counts.items(), key=lambda x: x[1], reverse=True)[:5])
+                fig, ax = plt.subplots(figsize=(6, 5))
+                ax.barh(list(top5.keys()), list(top5.values()), color='#dc3545')
+                ax.set_xlabel('Number of Cases')
+                ax.set_title('Most Common Injuries')
+                ax.invert_yaxis()
+                st.pyplot(fig)
+                plt.close()
         
         with col2:
-            st.subheader("Risk Distribution")
-            risk_counts = {}
-            for i in st.session_state.injuries:
-                risk = i.get('risk', 'Unknown')
-                risk_counts[risk] = risk_counts.get(risk, 0) + 1
+            st.subheader("Risk Score Distribution (0-10)")
+            risk_scores = [i.get('risk_score', 0) for i in st.session_state.injuries]
             
-            if risk_counts:
-                risk_order = ['Low', 'Medium', 'High', 'Very High']
-                risk_colors = {'Low': '#28a745', 'Medium': '#ffc107', 'High': '#fd7e14', 'Very High': '#dc3545'}
-                available_risks = [r for r in risk_order if r in risk_counts]
-                fig_risk = px.pie(
-                    values=[risk_counts.get(r, 0) for r in available_risks],
-                    names=available_risks,
-                    title="Risk Level Distribution",
-                    color=available_risks,
-                    color_discrete_map=risk_colors
-                )
-                fig_risk.update_layout(height=400)
-                st.plotly_chart(fig_risk, use_container_width=True)
+            if risk_scores:
+                fig, ax = plt.subplots(figsize=(6, 4))
+                ax.hist(risk_scores, bins=10, range=(0, 10), color='#fd7e14', edgecolor='white', alpha=0.7)
+                ax.set_xlabel('Risk Score')
+                ax.set_ylabel('Number of Injuries')
+                ax.set_title('Risk Score Distribution')
+                ax.set_xticks(range(0, 11))
+                st.pyplot(fig)
+                plt.close()
     
-    # ─── TAB 2: Load Monitoring ───
+    # TAB 2: Load Monitoring
     with tab2:
         st.header("Load Monitoring Analysis")
-        st.caption("Based on injury frequency and severity patterns")
         
         # Injuries over time
         st.subheader("📅 Injury Timeline")
-        
-        # Group injuries by date
         date_counts = {}
         for i in st.session_state.injuries:
             date = i.get('date', '')
@@ -464,26 +456,17 @@ if st.session_state.injuries and PLOTLY_AVAILABLE:
             dates_sorted = sorted(date_counts.keys())
             counts_sorted = [date_counts[d] for d in dates_sorted]
             
-            fig_line = go.Figure()
-            fig_line.add_trace(go.Scatter(
-                x=dates_sorted,
-                y=counts_sorted,
-                mode='lines+markers',
-                name='Injuries',
-                line=dict(color='#dc3545', width=2),
-                marker=dict(size=8, color='#dc3545')
-            ))
-            fig_line.update_layout(
-                title="Number of Injuries Over Time",
-                xaxis_title="Date",
-                yaxis_title="Number of Injuries",
-                height=450
-            )
-            st.plotly_chart(fig_line, use_container_width=True)
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.plot(dates_sorted, counts_sorted, marker='o', linewidth=2, color='#dc3545', markersize=8)
+            ax.set_xlabel('Date')
+            ax.set_ylabel('Number of Injuries')
+            ax.set_title('Injuries Over Time')
+            ax.tick_params(axis='x', rotation=45)
+            st.pyplot(fig)
+            plt.close()
         
-        # Player load analysis
+        # Player load
         st.subheader("👥 Player Injury Load")
-        
         player_counts = {}
         for i in st.session_state.injuries:
             player = i.get('name', '')
@@ -492,280 +475,158 @@ if st.session_state.injuries and PLOTLY_AVAILABLE:
         
         if player_counts:
             top_players = dict(sorted(player_counts.items(), key=lambda x: x[1], reverse=True)[:10])
-            
-            fig_player = px.bar(
-                x=list(top_players.values()),
-                y=list(top_players.keys()),
-                orientation='h',
-                title="Players with Most Injuries",
-                color=list(top_players.values()),
-                color_continuous_scale='OrRd',
-                labels={'x': 'Number of Injuries', 'y': 'Player'}
-            )
-            fig_player.update_layout(height=500)
-            st.plotly_chart(fig_player, use_container_width=True)
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.barh(list(top_players.keys()), list(top_players.values()), color='#fd7e14')
+            ax.set_xlabel('Number of Injuries')
+            ax.set_title('Players with Most Injuries')
+            ax.invert_yaxis()
+            st.pyplot(fig)
+            plt.close()
         
-        # Severity over time
-        st.subheader("⚠️ Severity Trend Over Time")
-        
-        severity_score = {'Mild': 1, 'Moderate': 2, 'Severe': 3, 'Critical': 4}
-        
-        severity_over_time = []
+        # Average risk score by player
+        st.subheader("📊 Average Risk Score by Player (0-10)")
+        player_avg_risk = {}
         for i in st.session_state.injuries:
-            date = i.get('date')
-            sev = i.get('severity', 'Moderate')
-            if date:
-                severity_over_time.append({
-                    'Date': date,
-                    'Severity Score': severity_score.get(sev, 2),
-                    'Player': i.get('name', ''),
-                    'Injury': i.get('injury_type', '')
-                })
+            player = i.get('name', '')
+            risk = i.get('risk_score', 0)
+            if player:
+                if player not in player_avg_risk:
+                    player_avg_risk[player] = []
+                player_avg_risk[player].append(risk)
         
-        if severity_over_time:
-            df_sev = pd.DataFrame(severity_over_time)
-            df_sev['Date'] = pd.to_datetime(df_sev['Date'])
-            df_pivot = df_sev.groupby('Date')['Severity Score'].mean().reset_index()
+        if player_avg_risk:
+            avg_risks = {p: sum(scores)/len(scores) for p, scores in player_avg_risk.items()}
+            top_risk_players = dict(sorted(avg_risks.items(), key=lambda x: x[1], reverse=True)[:10])
             
-            fig_heat = px.bar(
-                df_pivot,
-                x='Date',
-                y='Severity Score',
-                title="Average Severity Score Over Time (1=Mild, 4=Critical)",
-                color='Severity Score',
-                color_continuous_scale='RdYlGn_r',
-                labels={'Severity Score': 'Severity Level'}
-            )
-            fig_heat.update_layout(height=400)
-            st.plotly_chart(fig_heat, use_container_width=True)
+            fig, ax = plt.subplots(figsize=(8, 6))
+            colors_risk = ['#dc3545' if v >= 6 else '#fd7e14' if v >= 3 else '#28a745' for v in top_risk_players.values()]
+            ax.barh(list(top_risk_players.keys()), list(top_risk_players.values()), color=colors_risk)
+            ax.set_xlabel('Average Risk Score (0-10)')
+            ax.set_title('Average Risk Score by Player')
+            ax.invert_yaxis()
+            st.pyplot(fig)
+            plt.close()
     
-    # ─── TAB 3: Risk Profile ───
+    # TAB 3: Risk Profile
     with tab3:
         st.header("Risk Profile Analysis")
         
-        # Player selection
-        all_players_list = sorted(list(set(i.get('name', '') for i in st.session_state.injuries if i.get('name'))))
-        if all_players_list:
-            selected_risk_player = st.selectbox("Select Player for Risk Profile", all_players_list, key="risk_player_sel")
+        all_players = sorted(list(set(i.get('name', '') for i in st.session_state.injuries if i.get('name'))))
+        if all_players:
+            selected_player = st.selectbox("Select Player", all_players)
             
-            if selected_risk_player:
-                player_injuries = [i for i in st.session_state.injuries if i.get('name') == selected_risk_player]
+            if selected_player:
+                player_injuries = [i for i in st.session_state.injuries if i.get('name') == selected_player]
                 
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     st.metric("Total Injuries", len(player_injuries))
                 with col2:
-                    high_risk_count_player = sum(1 for i in player_injuries if i.get('risk') in ['High', 'Very High'])
-                    st.metric("High Risk Injuries", high_risk_count_player)
+                    avg_risk = sum(i.get('risk_score', 0) for i in player_injuries) / len(player_injuries) if player_injuries else 0
+                    st.metric("Average Risk Score", f"{avg_risk:.1f}/10")
                 with col3:
-                    severe_count = sum(1 for i in player_injuries if i.get('severity') in ['Severe', 'Critical'])
-                    st.metric("Severe/Critical", severe_count)
+                    high_risk = sum(1 for i in player_injuries if i.get('risk_score', 0) >= 6)
+                    st.metric("High Risk Injuries (6-10)", high_risk)
                 
-                # Risk radar chart
-                st.subheader(f"Risk Profile - {selected_risk_player}")
-                
-                injury_risk_scores = {}
-                for injury in player_injuries:
-                    inj_type = injury.get('injury_type', 'Unknown')
-                    risk_score = {'Low': 25, 'Medium': 50, 'High': 75, 'Very High': 100}.get(injury.get('risk', 'Medium'), 50)
-                    if inj_type not in injury_risk_scores:
-                        injury_risk_scores[inj_type] = []
-                    injury_risk_scores[inj_type].append(risk_score)
-                
-                if injury_risk_scores:
-                    risk_avg = {k: sum(v)/len(v) for k, v in injury_risk_scores.items()}
-                    
-                    fig_radar = go.Figure()
-                    fig_radar.add_trace(go.Scatterpolar(
-                        r=list(risk_avg.values()),
-                        theta=list(risk_avg.keys()),
-                        fill='toself',
-                        fillcolor='rgba(220,53,69,0.3)',
-                        line=dict(color='#dc3545', width=2),
-                        name=f"{selected_risk_player} - Risk Profile"
-                    ))
-                    fig_radar.update_layout(
-                        polar=dict(
-                            radialaxis=dict(
-                                visible=True,
-                                range=[0, 100],
-                                tickvals=[25, 50, 75, 100],
-                                ticktext=['Low', 'Medium', 'High', 'Very High']
-                            )
-                        ),
-                        title=f"Injury-Specific Risk Profile for {selected_risk_player}",
-                        height=500,
-                        showlegend=True
-                    )
-                    st.plotly_chart(fig_radar, use_container_width=True)
-                
-                # Timeline
-                st.subheader(f"Injury Timeline - {selected_risk_player}")
-                player_timeline = []
-                for injury in sorted(player_injuries, key=lambda x: x.get('date', '')):
-                    player_timeline.append({
-                        'Date': injury.get('date', ''),
-                        'Injury': injury.get('injury_type', ''),
-                        'Severity': injury.get('severity', ''),
-                        'Risk': injury.get('risk', '')
-                    })
-                
-                if player_timeline:
-                    df_timeline = pd.DataFrame(player_timeline)
-                    st.dataframe(df_timeline, use_container_width=True, hide_index=True)
-            
-            # Global risk matrix
-            st.subheader("📊 Global Risk Matrix - AL ITTIHAD SC LIBYA")
-            
-            risk_by_severity = {}
-            for i in st.session_state.injuries:
-                risk = i.get('risk', 'Unknown')
-                sev = i.get('severity', 'Unknown')
-                key = f"{risk} - {sev}"
-                risk_by_severity[key] = risk_by_severity.get(key, 0) + 1
-            
-            if risk_by_severity:
-                df_matrix = pd.DataFrame(list(risk_by_severity.items()), columns=['Risk-Severity Combination', 'Count'])
-                st.dataframe(df_matrix, use_container_width=True, hide_index=True)
-    
-    # ─── TAB 4: Injured Players Analysis ───
-    with tab4:
-        st.header("Injured Players Analysis - AL ITTIHAD SC LIBYA")
-        
-        all_players_list = sorted(list(set(i.get('name', '') for i in st.session_state.injuries if i.get('name'))))
-        if all_players_list:
-            selected_analysis_player = st.selectbox("Select Player for Detailed Analysis", all_players_list, key="analysis_player_sel")
-            
-            if selected_analysis_player:
-                player_injuries = [i for i in st.session_state.injuries if i.get('name') == selected_analysis_player]
-                
-                st.subheader(f"🏥 Complete Injury History - {selected_analysis_player}")
-                
-                # Summary cards
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Total Episodes", len(player_injuries))
-                with col2:
-                    contact_count_p = sum(1 for i in player_injuries if i.get('injury_category') == 'Contact')
-                    st.metric("Contact Injuries", contact_count_p)
-                with col3:
-                    non_contact_p = sum(1 for i in player_injuries if i.get('injury_category') == 'Non-Contact')
-                    st.metric("Non-Contact", non_contact_p)
-                with col4:
-                    risk_values = {'Low': 1, 'Medium': 2, 'High': 3, 'Very High': 4}
-                    avg_risk = sum(risk_values.get(i.get('risk', 'Medium'), 2) for i in player_injuries) / len(player_injuries)
-                    st.metric("Avg Risk Score", f"{avg_risk:.1f}/4")
-                
-                # Detailed table
+                st.subheader(f"Injury History - {selected_player}")
                 df_player = pd.DataFrame(player_injuries)
-                display_player_cols = ['date', 'injury_type', 'injury_category', 'severity', 'meat', 'rice', 'risk', 'clinical_notes']
-                available_cols = [col for col in display_player_cols if col in df_player.columns]
-                if available_cols:
-                    st.dataframe(df_player[available_cols], use_container_width=True, hide_index=True)
+                display_cols = ['date', 'injury_type', 'severity', 'risk_score', 'risk_label']
+                available = [c for c in display_cols if c in df_player.columns]
+                if available:
+                    rename_map = {
+                        'date': 'Date',
+                        'injury_type': 'Injury',
+                        'severity': 'Severity', 
+                        'risk_score': 'Risk Score',
+                        'risk_label': 'Risk Level'
+                    }
+                    df_player = df_player[available].rename(columns=rename_map)
+                    st.dataframe(df_player, use_container_width=True, hide_index=True)
                 
-                # Charts
-                st.subheader(f"Injury Distribution - {selected_analysis_player}")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    player_injury_types = {}
-                    for i in player_injuries:
-                        inj = i.get('injury_type', 'Unknown')
-                        player_injury_types[inj] = player_injury_types.get(inj, 0) + 1
+                # Risk trend over time
+                st.subheader(f"Risk Score Trend - {selected_player}")
+                if len(player_injuries) > 1:
+                    injuries_sorted = sorted(player_injuries, key=lambda x: x.get('date', ''))
+                    dates = [i.get('date', '') for i in injuries_sorted]
+                    risks = [i.get('risk_score', 0) for i in injuries_sorted]
                     
-                    if player_injury_types:
-                        fig_player_pie = px.pie(
-                            values=list(player_injury_types.values()),
-                            names=list(player_injury_types.keys()),
-                            title=f"Injury Types for {selected_analysis_player}",
-                            hole=0.3
-                        )
-                        fig_player_pie.update_layout(height=400)
-                        st.plotly_chart(fig_player_pie, use_container_width=True)
-                
-                with col2:
-                    player_severity = {}
-                    for i in player_injuries:
-                        sev = i.get('severity', 'Unknown')
-                        player_severity[sev] = player_severity.get(sev, 0) + 1
-                    
-                    if player_severity:
-                        fig_player_sev = px.bar(
-                            x=list(player_severity.keys()),
-                            y=list(player_severity.values()),
-                            title=f"Severity Distribution for {selected_analysis_player}",
-                            color=list(player_severity.keys()),
-                            color_discrete_map={'Mild': '#28a745', 'Moderate': '#ffc107', 'Severe': '#fd7e14', 'Critical': '#dc3545'}
-                        )
-                        fig_player_sev.update_layout(height=400, showlegend=False)
-                        st.plotly_chart(fig_player_sev, use_container_width=True)
+                    fig, ax = plt.subplots(figsize=(10, 5))
+                    ax.plot(dates, risks, marker='o', linewidth=2, color='#dc3545', markersize=8)
+                    ax.axhline(y=6, color='orange', linestyle='--', label='High Risk Threshold (6)')
+                    ax.axhline(y=3, color='green', linestyle='--', label='Medium Risk Threshold (3)')
+                    ax.set_xlabel('Date')
+                    ax.set_ylabel('Risk Score (0-10)')
+                    ax.set_title(f'Risk Score Evolution - {selected_player}')
+                    ax.set_ylim(0, 10)
+                    ax.legend()
+                    ax.tick_params(axis='x', rotation=45)
+                    st.pyplot(fig)
+                    plt.close()
+                else:
+                    st.info("Need at least 2 injuries to show trend")
+    
+    # TAB 4: Injured Players Analysis
+    with tab4:
+        st.header("Injured Players Analysis")
+        
+        all_players = sorted(list(set(i.get('name', '') for i in st.session_state.injuries if i.get('name'))))
+        
+        # Summary table
+        players_summary = []
+        for player in all_players:
+            player_data = [i for i in st.session_state.injuries if i.get('name') == player]
+            avg_risk = sum(i.get('risk_score', 0) for i in player_data) / len(player_data) if player_data else 0
+            players_summary.append({
+                'Player': player,
+                'Total Injuries': len(player_data),
+                'Contact': sum(1 for i in player_data if i.get('injury_category') == 'Contact'),
+                'Non-Contact': sum(1 for i in player_data if i.get('injury_category') == 'Non-Contact'),
+                'Critical/Severe': sum(1 for i in player_data if i.get('severity') in ['Severe', 'Critical']),
+                'Avg Risk Score': f"{avg_risk:.1f}/10",
+                'High Risk Injuries': sum(1 for i in player_data if i.get('risk_score', 0) >= 6)
+            })
+        
+        if players_summary:
+            df_summary = pd.DataFrame(players_summary)
+            st.dataframe(df_summary, use_container_width=True, hide_index=True)
             
-            # Global players summary
-            st.subheader("📊 All Players Summary - AL ITTIHAD SC LIBYA")
+            # Export buttons
+            col_csv, col_remove_all = st.columns(2)
             
-            players_summary = []
-            for player in all_players_list:
-                player_data = [i for i in st.session_state.injuries if i.get('name') == player]
-                players_summary.append({
-                    'Player': player,
-                    'Total Injuries': len(player_data),
-                    'Contact': sum(1 for i in player_data if i.get('injury_category') == 'Contact'),
-                    'Non-Contact': sum(1 for i in player_data if i.get('injury_category') == 'Non-Contact'),
-                    'Critical/Severe': sum(1 for i in player_data if i.get('severity') in ['Severe', 'Critical']),
-                    'High/Very High Risk': sum(1 for i in player_data if i.get('risk') in ['High', 'Very High'])
-                })
-            
-            if players_summary:
-                df_summary = pd.DataFrame(players_summary)
-                st.dataframe(df_summary, use_container_width=True, hide_index=True)
-                
-                # Export button
+            with col_csv:
                 csv_summary = df_summary.to_csv(index=False)
                 st.download_button(
-                    label="📥 Export Players Summary to CSV",
+                    label="📥 Export Summary to CSV",
                     data=csv_summary,
-                    file_name=f"al_ittihad_players_summary_{datetime.today().strftime('%Y%m%d')}.csv",
+                    file_name=f"players_summary_{datetime.today().strftime('%Y%m%d')}.csv",
                     mime="text/csv"
                 )
-        else:
-            st.info("No players found. Add some injuries first!")
-
-elif st.session_state.injuries and not PLOTLY_AVAILABLE:
-    st.warning("⚠️ Plotly is not installed. Charts are disabled. Please add 'plotly' to your requirements.txt file.")
-    
-    # Show basic data without charts
-    st.header("Injuries Database - Basic View")
-    df_all = pd.DataFrame(st.session_state.injuries)
-    st.dataframe(df_all, use_container_width=True)
+            
+            with col_remove_all:
+                if st.button("🗑️ REMOVE ALL PLAYERS DATA", type="secondary"):
+                    st.session_state.injuries = []
+                    save_data([])
+                    st.success("All players data removed!")
+                    st.rerun()
 
 # ──────────────────────────────────────────────────────────────
-# EXPORT & CLEAR DATA
+# EXPORT ALL DATA
 # ──────────────────────────────────────────────────────────────
 if st.session_state.injuries:
     st.markdown("---")
-    col_export, col_clear = st.columns(2)
     
-    with col_export:
-        export_df_all = pd.DataFrame(st.session_state.injuries)
-        csv_all = export_df_all.to_csv(index=False)
-        st.download_button(
-            label="📥 Export All Injuries to CSV",
-            data=csv_all,
-            file_name=f"al_ittihad_all_injuries_{datetime.today().strftime('%Y%m%d')}.csv",
-            mime="text/csv"
-        )
-    
-    with col_clear:
-        if st.button("🗑️ Clear All Data", type="secondary"):
-            st.session_state.injuries = []
-            save_data([])
-            st.success("All data cleared!")
-            st.rerun()
+    export_df = pd.DataFrame(st.session_state.injuries)
+    csv_data = export_df.to_csv(index=False)
+    st.download_button(
+        label="📥 Export All Injuries to CSV",
+        data=csv_data,
+        file_name=f"all_injuries_{datetime.today().strftime('%Y%m%d')}.csv",
+        mime="text/csv"
+    )
 
 # Footer
 st.markdown("---")
-st.markdown("### ℹ️ Clinical Guidelines - AL ITTIHAD SC LIBYA")
+st.markdown("### ℹ️ Clinical Guidelines")
 col_meat, col_rice = st.columns(2)
 with col_meat:
     st.markdown("**🍖 MEAT Protocol**")
@@ -779,6 +640,18 @@ with col_rice:
     st.markdown("- **I**ce: Apply cold therapy")
     st.markdown("- **C**ompression: Reduce swelling")
     st.markdown("- **E**levation: Above heart level")
+
+st.markdown("---")
+st.markdown("### 📊 Risk Score Scale (0-10)")
+col_scale1, col_scale2, col_scale3, col_scale4 = st.columns(4)
+with col_scale1:
+    st.markdown("🟢 **0-2: Low Risk**")
+with col_scale2:
+    st.markdown("🟡 **3-5: Medium Risk**")
+with col_scale3:
+    st.markdown("🟠 **6-8: High Risk**")
+with col_scale4:
+    st.markdown("🔴 **9-10: Very High Risk**")
 
 st.markdown("---")
 st.markdown("<p style='text-align: center; color: #1a472a; font-weight: 600;'>AL ITTIHAD SC LIBYA - Sports Medicine Department © 2024</p>", unsafe_allow_html=True)
