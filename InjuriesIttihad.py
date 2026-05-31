@@ -1,5 +1,5 @@
 # app.py - AL ITTIHAD SC LIBYA - Injury Management System
-# FULLY CORRECTED VERSION - No KeyError, No ValueError
+# FULLY CORRECTED VERSION - No Column Assignment Errors
 
 import streamlit as st
 import pandas as pd
@@ -57,6 +57,42 @@ st.markdown("""
         color: #d4edda;
         font-size: 0.9rem;
         margin-top: 0.5rem;
+    }
+    
+    .risk-card-critique {
+        background: linear-gradient(135deg, #7b1d1d 0%, #dc3545 100%);
+        color: white;
+        padding: 1rem;
+        border-radius: 12px;
+        margin: 0.5rem 0;
+        border-left: 5px solid #ff6b6b;
+    }
+    
+    .risk-card-eleve {
+        background: linear-gradient(135deg, #6d3a00 0%, #fd7e14 100%);
+        color: white;
+        padding: 1rem;
+        border-radius: 12px;
+        margin: 0.5rem 0;
+        border-left: 5px solid #ffaa5c;
+    }
+    
+    .risk-card-modere {
+        background: linear-gradient(135deg, #856404 0%, #ffc107 100%);
+        color: #1a1a1a;
+        padding: 1rem;
+        border-radius: 12px;
+        margin: 0.5rem 0;
+        border-left: 5px solid #ffe08a;
+    }
+    
+    .risk-card-faible {
+        background: linear-gradient(135deg, #1a4a2e 0%, #28a745 100%);
+        color: white;
+        padding: 1rem;
+        border-radius: 12px;
+        margin: 0.5rem 0;
+        border-left: 5px solid #6fcf97;
     }
     
     .stTabs [data-baseweb="tab-list"] {
@@ -137,7 +173,6 @@ if st.session_state.injuries:
         st.sidebar.markdown(f"**🤕 Contact:** {contact_count}")
         st.sidebar.markdown(f"**🏃 Non-Contact:** {non_contact_count}")
         
-        # Show severity breakdown
         severity_counts = {}
         for i in filtered_by_date:
             sev = i.get('severity', 'Unknown')
@@ -158,7 +193,6 @@ else:
 # ──────────────────────────────────────────────────────────────
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🗑️ REMOVE PLAYER DATA")
-st.sidebar.markdown("Select a player and date range to remove their data")
 
 if st.session_state.injuries:
     all_players_for_remove = sorted(list(set([i.get('name', '') for i in st.session_state.injuries if i.get('name')])))
@@ -166,18 +200,16 @@ if st.session_state.injuries:
     if all_players_for_remove:
         player_to_remove = st.sidebar.selectbox("Select Player", all_players_for_remove, key="remove_player_sidebar")
         
-        # Get dates for this player
         player_dates = sorted([i.get('date', '') for i in st.session_state.injuries if i.get('name') == player_to_remove])
         
         if player_dates:
-            st.sidebar.markdown(f"**Player has injuries on:**")
+            st.sidebar.markdown(f"**📅 Injuries on:**")
             for date in player_dates:
-                st.sidebar.markdown(f"- 📅 {date}")
+                st.sidebar.markdown(f"- {date}")
             
-            # Option to remove by specific date
             remove_option = st.sidebar.radio(
                 "Remove option:",
-                ["Remove all player data", f"Remove data from specific date"]
+                ["Remove all player data", "Remove data from specific date"]
             )
             
             if remove_option == "Remove all player data":
@@ -195,8 +227,6 @@ if st.session_state.injuries:
                     save_data(st.session_state.injuries)
                     st.sidebar.success(f"✅ Data for {player_to_remove} on {specific_date} removed!")
                     st.rerun()
-        else:
-            st.sidebar.info("No injuries found for this player")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### ℹ️ Clinical Protocols")
@@ -296,20 +326,15 @@ st.markdown("---")
 st.header("📋 INJURIES DATABASE")
 
 if filtered_by_date and selected_date:
-    # Create DataFrame from filtered data
     df_display = pd.DataFrame(filtered_by_date)
     
-    # Define columns to display
     display_cols = ['name', 'date', 'injury_type', 'injury_category', 'severity', 'meat', 'rice', 'risk_score', 'risk_label']
-    
-    # Filter to only available columns
     available_cols = [col for col in display_cols if col in df_display.columns]
     
     if available_cols:
-        # Create display DataFrame with selected columns
         display_df = df_display[available_cols].copy()
         
-        # Rename columns safely using dictionary
+        # Safe column renaming using dictionary
         column_rename = {
             'name': 'Player Name',
             'date': 'Date',
@@ -322,16 +347,14 @@ if filtered_by_date and selected_date:
             'risk_label': 'Risk Level'
         }
         
-        # Only rename columns that exist
         rename_dict = {k: v for k, v in column_rename.items() if k in display_df.columns}
         display_df = display_df.rename(columns=rename_dict)
         
         st.dataframe(display_df, use_container_width=True, hide_index=True)
         
-        # Remove specific injury section
+        # Remove specific injury
         st.markdown("#### 🗑️ Remove Specific Injury")
         
-        # Create options for removal using the original dataframe
         injury_options = []
         for idx, row in df_display.iterrows():
             option_text = f"{row['name']} - {row['injury_type']} - {row['date']}"
@@ -345,11 +368,9 @@ if filtered_by_date and selected_date:
             
             with col_remove_button:
                 if st.button("🗑️ REMOVE", key="remove_injury_btn"):
-                    # Find and remove the selected injury
                     for idx, option in enumerate(injury_options):
                         if option == injury_to_remove:
                             row = df_display.iloc[idx]
-                            # Remove from session state
                             st.session_state.injuries = [i for i in st.session_state.injuries if not (
                                 i.get('name') == row['name'] and 
                                 i.get('injury_type') == row['injury_type'] and 
@@ -364,7 +385,7 @@ else:
 st.markdown("---")
 
 # ──────────────────────────────────────────────────────────────
-# DASHBOARD TABS (only if there is data)
+# DASHBOARD TABS
 # ──────────────────────────────────────────────────────────────
 
 if st.session_state.injuries:
@@ -554,7 +575,16 @@ if st.session_state.injuries:
                 available = [c for c in display_cols if c in df_player.columns]
                 if available:
                     df_player_display = df_player[available].copy()
-                    df_player_display.columns = ['Date', 'Injury', 'Severity', 'Risk Score', 'Risk Level']
+                    # Safe renaming using dictionary
+                    player_rename = {
+                        'date': 'Date',
+                        'injury_type': 'Injury',
+                        'severity': 'Severity',
+                        'risk_score': 'Risk Score',
+                        'risk_label': 'Risk Level'
+                    }
+                    player_rename_dict = {k: v for k, v in player_rename.items() if k in df_player_display.columns}
+                    df_player_display = df_player_display.rename(columns=player_rename_dict)
                     st.dataframe(df_player_display, use_container_width=True, hide_index=True)
                 
                 if len(player_injuries) > 1:
