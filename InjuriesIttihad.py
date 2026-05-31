@@ -1,5 +1,5 @@
 # app.py - AL ITTIHAD SC LIBYA - Injury Management System
-# Manual Data Entry | Clinical Dashboard | Load Monitoring | Risk Profile
+# CORRECTED VERSION - No KeyError
 
 import streamlit as st
 import pandas as pd
@@ -107,10 +107,6 @@ st.markdown("""
         font-size: 1rem;
         font-weight: 600;
     }
-    
-    .remove-button {
-        color: #dc3545;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -193,7 +189,6 @@ if st.session_state.injuries:
         player_to_remove = st.sidebar.selectbox("Select Player to Remove", all_players_for_remove, key="remove_player")
         
         if st.sidebar.button("🗑️ REMOVE PLAYER", type="secondary"):
-            # Remove all injuries for this player
             st.session_state.injuries = [i for i in st.session_state.injuries if i.get('name') != player_to_remove]
             save_data(st.session_state.injuries)
             st.sidebar.success(f"✅ {player_to_remove} removed successfully!")
@@ -243,9 +238,7 @@ with st.container():
         severity = st.select_slider("⚠️ Severity Level", options=["Mild", "Moderate", "Severe", "Critical"], value="Moderate")
     
     with col6:
-        # Risk score on scale 0-10 instead of 4 levels
         risk_score = st.slider("📊 Risk Score (0-10)", min_value=0, max_value=10, value=5, step=1)
-        # Convert score to risk label for display
         if risk_score <= 2:
             risk_label = "Low"
         elif risk_score <= 5:
@@ -299,43 +292,52 @@ st.markdown("---")
 st.header("📋 INJURIES DATABASE")
 
 if filtered_by_date and selected_date:
+    # Create DataFrame WITHOUT renaming columns for internal use
     df_display = pd.DataFrame(filtered_by_date)
+    
+    # Display columns with original names
     display_cols = ['name', 'date', 'injury_type', 'injury_category', 'severity', 'meat', 'rice', 'risk_score', 'risk_label']
     available_cols = [col for col in display_cols if col in df_display.columns]
+    
     if available_cols:
-        # Rename columns for display
-        rename_map = {
-            'name': 'Player Name',
-            'date': 'Date', 
-            'injury_type': 'Injury Diagnosis',
-            'injury_category': 'Category',
-            'severity': 'Severity',
-            'meat': 'MEAT',
-            'rice': 'RICE',
-            'risk_score': 'Risk Score (0-10)',
-            'risk_label': 'Risk Level'
-        }
-        df_display = df_display[available_cols].rename(columns=rename_map)
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        # For display only, create a renamed version
+        display_df = df_display[available_cols].copy()
+        display_df.columns = ['Player Name', 'Date', 'Injury Diagnosis', 'Category', 'Severity', 'MEAT', 'RICE', 'Risk Score', 'Risk Level']
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
         
-        # Add individual injury removal option
+        # Remove specific injury section - USING ORIGINAL DATAFRAME
         st.markdown("#### 🗑️ Remove Specific Injury")
-        injury_options = [f"{row['name']} - {row['injury_type']} - {row['date']}" for idx, row in df_display.iterrows()]
-        injury_to_remove = st.selectbox("Select injury to remove", injury_options, key="remove_injury_sidebar")
         
-        if st.button("🗑️ REMOVE THIS INJURY", type="secondary"):
-            # Find and remove the selected injury
-            for idx, row in df_display.iterrows():
-                injury_text = f"{row['name']} - {row['injury_type']} - {row['date']}"
-                if injury_text == injury_to_remove:
-                    st.session_state.injuries = [i for i in st.session_state.injuries if not (
-                        i.get('name') == row['name'] and 
-                        i.get('injury_type') == row['injury_type'] and 
-                        i.get('date') == row['date']
-                    )]
-                    save_data(st.session_state.injuries)
-                    st.success("✅ Injury removed successfully!")
-                    st.rerun()
+        # Create options from original dataframe with original column names
+        injury_options = []
+        injury_data_store = []  # Store the actual injury data for removal
+        
+        for idx, row in df_display.iterrows():
+            option_text = f"{row['name']} - {row['injury_type']} - {row['date']}"
+            injury_options.append(option_text)
+            injury_data_store.append({
+                'name': row['name'],
+                'injury_type': row['injury_type'],
+                'date': row['date']
+            })
+        
+        if injury_options:
+            injury_to_remove = st.selectbox("Select injury to remove", injury_options, key="remove_injury_sidebar")
+            
+            if st.button("🗑️ REMOVE THIS INJURY", type="secondary"):
+                # Find the selected injury
+                for idx, option in enumerate(injury_options):
+                    if option == injury_to_remove:
+                        injury_data = injury_data_store[idx]
+                        # Remove from session state
+                        st.session_state.injuries = [i for i in st.session_state.injuries if not (
+                            i.get('name') == injury_data['name'] and 
+                            i.get('injury_type') == injury_data['injury_type'] and 
+                            i.get('date') == injury_data['date']
+                        )]
+                        save_data(st.session_state.injuries)
+                        st.success("✅ Injury removed successfully!")
+                        st.rerun()
 else:
     st.info("👈 Select a date from the sidebar to view injury records")
 
@@ -367,11 +369,9 @@ if st.session_state.injuries:
             critical_count = sum(1 for i in st.session_state.injuries if i.get('severity') == 'Critical')
             st.metric("🚨 Critical Cases", critical_count)
         with col4:
-            # High risk: score 6-10
             high_risk_count = sum(1 for i in st.session_state.injuries if i.get('risk_score', 0) >= 6)
             st.metric("⚠️ High Risk (6-10)", high_risk_count)
         
-        # Charts using matplotlib
         col1, col2 = st.columns(2)
         
         with col1:
@@ -444,7 +444,6 @@ if st.session_state.injuries:
     with tab2:
         st.header("Load Monitoring Analysis")
         
-        # Injuries over time
         st.subheader("📅 Injury Timeline")
         date_counts = {}
         for i in st.session_state.injuries:
@@ -465,7 +464,6 @@ if st.session_state.injuries:
             st.pyplot(fig)
             plt.close()
         
-        # Player load
         st.subheader("👥 Player Injury Load")
         player_counts = {}
         for i in st.session_state.injuries:
@@ -483,7 +481,6 @@ if st.session_state.injuries:
             st.pyplot(fig)
             plt.close()
         
-        # Average risk score by player
         st.subheader("📊 Average Risk Score by Player (0-10)")
         player_avg_risk = {}
         for i in st.session_state.injuries:
@@ -533,19 +530,12 @@ if st.session_state.injuries:
                 display_cols = ['date', 'injury_type', 'severity', 'risk_score', 'risk_label']
                 available = [c for c in display_cols if c in df_player.columns]
                 if available:
-                    rename_map = {
-                        'date': 'Date',
-                        'injury_type': 'Injury',
-                        'severity': 'Severity', 
-                        'risk_score': 'Risk Score',
-                        'risk_label': 'Risk Level'
-                    }
-                    df_player = df_player[available].rename(columns=rename_map)
-                    st.dataframe(df_player, use_container_width=True, hide_index=True)
+                    df_player_display = df_player[available].copy()
+                    df_player_display.columns = ['Date', 'Injury', 'Severity', 'Risk Score', 'Risk Level']
+                    st.dataframe(df_player_display, use_container_width=True, hide_index=True)
                 
-                # Risk trend over time
-                st.subheader(f"Risk Score Trend - {selected_player}")
                 if len(player_injuries) > 1:
+                    st.subheader(f"Risk Score Trend - {selected_player}")
                     injuries_sorted = sorted(player_injuries, key=lambda x: x.get('date', ''))
                     dates = [i.get('date', '') for i in injuries_sorted]
                     risks = [i.get('risk_score', 0) for i in injuries_sorted]
@@ -562,8 +552,6 @@ if st.session_state.injuries:
                     ax.tick_params(axis='x', rotation=45)
                     st.pyplot(fig)
                     plt.close()
-                else:
-                    st.info("Need at least 2 injuries to show trend")
     
     # TAB 4: Injured Players Analysis
     with tab4:
@@ -571,7 +559,6 @@ if st.session_state.injuries:
         
         all_players = sorted(list(set(i.get('name', '') for i in st.session_state.injuries if i.get('name'))))
         
-        # Summary table
         players_summary = []
         for player in all_players:
             player_data = [i for i in st.session_state.injuries if i.get('name') == player]
@@ -590,7 +577,6 @@ if st.session_state.injuries:
             df_summary = pd.DataFrame(players_summary)
             st.dataframe(df_summary, use_container_width=True, hide_index=True)
             
-            # Export buttons
             col_csv, col_remove_all = st.columns(2)
             
             with col_csv:
