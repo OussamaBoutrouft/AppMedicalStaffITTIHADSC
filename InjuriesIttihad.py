@@ -1,5 +1,5 @@
 # app.py - AL ITTIHAD SC LIBYA - Injury Management System
-# CORRECTED VERSION - No KeyError
+# FULLY CORRECTED VERSION - No KeyError, No ValueError
 
 import streamlit as st
 import pandas as pd
@@ -59,42 +59,6 @@ st.markdown("""
         margin-top: 0.5rem;
     }
     
-    .risk-card-critique {
-        background: linear-gradient(135deg, #7b1d1d 0%, #dc3545 100%);
-        color: white;
-        padding: 1rem;
-        border-radius: 12px;
-        margin: 0.5rem 0;
-        border-left: 5px solid #ff6b6b;
-    }
-    
-    .risk-card-eleve {
-        background: linear-gradient(135deg, #6d3a00 0%, #fd7e14 100%);
-        color: white;
-        padding: 1rem;
-        border-radius: 12px;
-        margin: 0.5rem 0;
-        border-left: 5px solid #ffaa5c;
-    }
-    
-    .risk-card-modere {
-        background: linear-gradient(135deg, #856404 0%, #ffc107 100%);
-        color: #1a1a1a;
-        padding: 1rem;
-        border-radius: 12px;
-        margin: 0.5rem 0;
-        border-left: 5px solid #ffe08a;
-    }
-    
-    .risk-card-faible {
-        background: linear-gradient(135deg, #1a4a2e 0%, #28a745 100%);
-        color: white;
-        padding: 1rem;
-        border-radius: 12px;
-        margin: 0.5rem 0;
-        border-left: 5px solid #6fcf97;
-    }
-    
     .stTabs [data-baseweb="tab-list"] {
         gap: 0.5rem;
         background: #f0f4f0;
@@ -147,7 +111,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────
-# SIDEBAR
+# SIDEBAR - DATE NAVIGATION
 # ──────────────────────────────────────────────────────────────
 st.sidebar.markdown("### 📅 DATE NAVIGATION")
 st.sidebar.markdown("---")
@@ -172,6 +136,16 @@ if st.session_state.injuries:
         non_contact_count = sum(1 for i in filtered_by_date if i.get('injury_category') == 'Non-Contact')
         st.sidebar.markdown(f"**🤕 Contact:** {contact_count}")
         st.sidebar.markdown(f"**🏃 Non-Contact:** {non_contact_count}")
+        
+        # Show severity breakdown
+        severity_counts = {}
+        for i in filtered_by_date:
+            sev = i.get('severity', 'Unknown')
+            severity_counts[sev] = severity_counts.get(sev, 0) + 1
+        if severity_counts:
+            st.sidebar.markdown("**⚠️ Severity:**")
+            for sev, count in severity_counts.items():
+                st.sidebar.markdown(f"- {sev}: {count}")
     else:
         selected_date = None
         filtered_by_date = []
@@ -179,20 +153,50 @@ else:
     selected_date = None
     filtered_by_date = []
 
+# ──────────────────────────────────────────────────────────────
+# SIDEBAR - REMOVE PLAYER (WITH DATE SELECTION)
+# ──────────────────────────────────────────────────────────────
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🗑️ REMOVE PLAYER")
-st.sidebar.markdown("Select a player to remove all their records")
+st.sidebar.markdown("### 🗑️ REMOVE PLAYER DATA")
+st.sidebar.markdown("Select a player and date range to remove their data")
 
 if st.session_state.injuries:
     all_players_for_remove = sorted(list(set([i.get('name', '') for i in st.session_state.injuries if i.get('name')])))
+    
     if all_players_for_remove:
-        player_to_remove = st.sidebar.selectbox("Select Player to Remove", all_players_for_remove, key="remove_player")
+        player_to_remove = st.sidebar.selectbox("Select Player", all_players_for_remove, key="remove_player_sidebar")
         
-        if st.sidebar.button("🗑️ REMOVE PLAYER", type="secondary"):
-            st.session_state.injuries = [i for i in st.session_state.injuries if i.get('name') != player_to_remove]
-            save_data(st.session_state.injuries)
-            st.sidebar.success(f"✅ {player_to_remove} removed successfully!")
-            st.rerun()
+        # Get dates for this player
+        player_dates = sorted([i.get('date', '') for i in st.session_state.injuries if i.get('name') == player_to_remove])
+        
+        if player_dates:
+            st.sidebar.markdown(f"**Player has injuries on:**")
+            for date in player_dates:
+                st.sidebar.markdown(f"- 📅 {date}")
+            
+            # Option to remove by specific date
+            remove_option = st.sidebar.radio(
+                "Remove option:",
+                ["Remove all player data", f"Remove data from specific date"]
+            )
+            
+            if remove_option == "Remove all player data":
+                if st.sidebar.button("🗑️ REMOVE ALL PLAYER DATA", type="secondary"):
+                    st.session_state.injuries = [i for i in st.session_state.injuries if i.get('name') != player_to_remove]
+                    save_data(st.session_state.injuries)
+                    st.sidebar.success(f"✅ All data for {player_to_remove} removed!")
+                    st.rerun()
+            else:
+                specific_date = st.sidebar.selectbox("Select date to remove", player_dates)
+                if st.sidebar.button("🗑️ REMOVE FROM THIS DATE", type="secondary"):
+                    st.session_state.injuries = [i for i in st.session_state.injuries if not (
+                        i.get('name') == player_to_remove and i.get('date') == specific_date
+                    )]
+                    save_data(st.session_state.injuries)
+                    st.sidebar.success(f"✅ Data for {player_to_remove} on {specific_date} removed!")
+                    st.rerun()
+        else:
+            st.sidebar.info("No injuries found for this player")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### ℹ️ Clinical Protocols")
@@ -206,10 +210,10 @@ st.sidebar.markdown("""
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📊 Risk Score Scale (0-10)")
 st.sidebar.markdown("""
-- **0-2**: Low Risk
-- **3-5**: Medium Risk  
-- **6-8**: High Risk
-- **9-10**: Very High Risk
+- **0-2**: Low Risk 🟢
+- **3-5**: Medium Risk 🟡
+- **6-8**: High Risk 🟠
+- **9-10**: Very High Risk 🔴
 """)
 
 # ──────────────────────────────────────────────────────────────
@@ -292,59 +296,75 @@ st.markdown("---")
 st.header("📋 INJURIES DATABASE")
 
 if filtered_by_date and selected_date:
-    # Create DataFrame WITHOUT renaming columns for internal use
+    # Create DataFrame from filtered data
     df_display = pd.DataFrame(filtered_by_date)
     
-    # Display columns with original names
+    # Define columns to display
     display_cols = ['name', 'date', 'injury_type', 'injury_category', 'severity', 'meat', 'rice', 'risk_score', 'risk_label']
+    
+    # Filter to only available columns
     available_cols = [col for col in display_cols if col in df_display.columns]
     
     if available_cols:
-        # For display only, create a renamed version
+        # Create display DataFrame with selected columns
         display_df = df_display[available_cols].copy()
-        display_df.columns = ['Player Name', 'Date', 'Injury Diagnosis', 'Category', 'Severity', 'MEAT', 'RICE', 'Risk Score', 'Risk Level']
+        
+        # Rename columns safely using dictionary
+        column_rename = {
+            'name': 'Player Name',
+            'date': 'Date',
+            'injury_type': 'Injury Diagnosis',
+            'injury_category': 'Category',
+            'severity': 'Severity',
+            'meat': 'MEAT',
+            'rice': 'RICE',
+            'risk_score': 'Risk Score (0-10)',
+            'risk_label': 'Risk Level'
+        }
+        
+        # Only rename columns that exist
+        rename_dict = {k: v for k, v in column_rename.items() if k in display_df.columns}
+        display_df = display_df.rename(columns=rename_dict)
+        
         st.dataframe(display_df, use_container_width=True, hide_index=True)
         
-        # Remove specific injury section - USING ORIGINAL DATAFRAME
+        # Remove specific injury section
         st.markdown("#### 🗑️ Remove Specific Injury")
         
-        # Create options from original dataframe with original column names
+        # Create options for removal using the original dataframe
         injury_options = []
-        injury_data_store = []  # Store the actual injury data for removal
-        
         for idx, row in df_display.iterrows():
             option_text = f"{row['name']} - {row['injury_type']} - {row['date']}"
             injury_options.append(option_text)
-            injury_data_store.append({
-                'name': row['name'],
-                'injury_type': row['injury_type'],
-                'date': row['date']
-            })
         
         if injury_options:
-            injury_to_remove = st.selectbox("Select injury to remove", injury_options, key="remove_injury_sidebar")
+            col_remove_select, col_remove_button = st.columns([3, 1])
             
-            if st.button("🗑️ REMOVE THIS INJURY", type="secondary"):
-                # Find the selected injury
-                for idx, option in enumerate(injury_options):
-                    if option == injury_to_remove:
-                        injury_data = injury_data_store[idx]
-                        # Remove from session state
-                        st.session_state.injuries = [i for i in st.session_state.injuries if not (
-                            i.get('name') == injury_data['name'] and 
-                            i.get('injury_type') == injury_data['injury_type'] and 
-                            i.get('date') == injury_data['date']
-                        )]
-                        save_data(st.session_state.injuries)
-                        st.success("✅ Injury removed successfully!")
-                        st.rerun()
+            with col_remove_select:
+                injury_to_remove = st.selectbox("Select injury to remove", injury_options, key="remove_injury_select")
+            
+            with col_remove_button:
+                if st.button("🗑️ REMOVE", key="remove_injury_btn"):
+                    # Find and remove the selected injury
+                    for idx, option in enumerate(injury_options):
+                        if option == injury_to_remove:
+                            row = df_display.iloc[idx]
+                            # Remove from session state
+                            st.session_state.injuries = [i for i in st.session_state.injuries if not (
+                                i.get('name') == row['name'] and 
+                                i.get('injury_type') == row['injury_type'] and 
+                                i.get('date') == row['date']
+                            )]
+                            save_data(st.session_state.injuries)
+                            st.success("✅ Injury removed successfully!")
+                            st.rerun()
 else:
     st.info("👈 Select a date from the sidebar to view injury records")
 
 st.markdown("---")
 
 # ──────────────────────────────────────────────────────────────
-# DASHBOARD TABS
+# DASHBOARD TABS (only if there is data)
 # ──────────────────────────────────────────────────────────────
 
 if st.session_state.injuries:
@@ -461,6 +481,7 @@ if st.session_state.injuries:
             ax.set_ylabel('Number of Injuries')
             ax.set_title('Injuries Over Time')
             ax.tick_params(axis='x', rotation=45)
+            plt.tight_layout()
             st.pyplot(fig)
             plt.close()
         
@@ -478,6 +499,7 @@ if st.session_state.injuries:
             ax.set_xlabel('Number of Injuries')
             ax.set_title('Players with Most Injuries')
             ax.invert_yaxis()
+            plt.tight_layout()
             st.pyplot(fig)
             plt.close()
         
@@ -501,6 +523,7 @@ if st.session_state.injuries:
             ax.set_xlabel('Average Risk Score (0-10)')
             ax.set_title('Average Risk Score by Player')
             ax.invert_yaxis()
+            plt.tight_layout()
             st.pyplot(fig)
             plt.close()
     
@@ -550,6 +573,7 @@ if st.session_state.injuries:
                     ax.set_ylim(0, 10)
                     ax.legend()
                     ax.tick_params(axis='x', rotation=45)
+                    plt.tight_layout()
                     st.pyplot(fig)
                     plt.close()
     
